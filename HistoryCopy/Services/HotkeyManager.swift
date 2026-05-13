@@ -7,6 +7,8 @@ final class HotkeyManager {
 
     private var hotkeyRef: EventHotKeyRef?
     private var eventHandlerRef: EventHandlerRef?
+    private var globalMonitor: Any?
+    private var localMonitor: Any?
     var onHotkeyPressed: (() -> Void)?
 
     struct HotkeyConfig: Equatable {
@@ -41,6 +43,7 @@ final class HotkeyManager {
     func register() {
         unregister()
 
+        // Primary: Carbon hotkey (works without Accessibility permission)
         var eventType = EventTypeSpec(
             eventClass: OSType(kEventClassKeyboard),
             eventKind: OSType(kEventHotKeyPressed)
@@ -50,14 +53,9 @@ final class HotkeyManager {
 
         InstallEventHandler(
             GetApplicationEventTarget(),
-            { (_, event, userData) -> OSStatus in
-                print("[HistoryCopy] Carbon event handler invoked")
-                guard let userData = userData else {
-                    print("[HistoryCopy] ERROR: userData is nil in Carbon handler")
-                    return -1
-                }
+            { (_, _, userData) -> OSStatus in
+                guard let userData = userData else { return -1 }
                 let manager = Unmanaged<HotkeyManager>.fromOpaque(userData).takeUnretainedValue()
-                print("[HistoryCopy] Carbon handler calling onHotkeyPressed, callback=\(manager.onHotkeyPressed != nil ? "set" : "nil")")
                 manager.onHotkeyPressed?()
                 return noErr
             },
@@ -78,7 +76,35 @@ final class HotkeyManager {
         )
 
         if status != noErr {
-            print("[HistoryCopy] Failed to register hotkey: \(status)")
+            print("[HistoryCopy] Carbon hotkey registration failed: \(status)")
+        }
+
+        // Fallback: NSEvent global monitor (requires Accessibility permission)
+        globalMonitor = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            self?.handleKeyEvent(event)
+        }
+
+        // Local monitor catches events when app is active
+        localMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            self?.handleKeyEvent(event)
+            return event
+        }
+    }
+
+    private func carbonModsToNSEvent(_ carbonMods: Int) -> NSEvent.ModifierFlags {
+        var flags = NSEvent.ModifierFlags()
+        if carbonMods & cmdKey != 0 { flags.insert(.command) }
+        if carbonMods & optionKey != 0 { flags.insert(.option) }
+        if carbonMods & controlKey != 0 { flags.insert(.control) }
+        if carbonMods & shiftKey != 0 { flags.insert(.shift) }
+        return flags
+    }
+
+    private func handleKeyEvent(_ event: NSEvent) {
+        let expectedMods = carbonModsToNSEvent(currentConfig.modifiers)
+        let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+        if event.keyCode == UInt16(currentConfig.keyCode) && flags == expectedMods {
+            onHotkeyPressed?()
         }
     }
 
@@ -90,6 +116,14 @@ final class HotkeyManager {
         if let handler = eventHandlerRef {
             RemoveEventHandler(handler)
             eventHandlerRef = nil
+        }
+        if let monitor = globalMonitor {
+            NSEvent.removeMonitor(monitor)
+            globalMonitor = nil
+        }
+        if let monitor = localMonitor {
+            NSEvent.removeMonitor(monitor)
+            localMonitor = nil
         }
     }
 

@@ -1,20 +1,30 @@
 import Foundation
 import AppKit
 import SwiftData
+import CryptoKit
 
 @MainActor
 final class ClipboardMonitor: ObservableObject {
     private var timer: Timer?
+    private var cleanupTimer: Timer?
     private var lastChangeCount: Int = 0
     private let pasteboard = NSPasteboard.general
     private var modelContext: ModelContext?
+    private weak var storageManager: StorageManager?
 
-    func start(context: ModelContext) {
+    func start(context: ModelContext, storageManager: StorageManager? = nil) {
         self.modelContext = context
+        self.storageManager = storageManager
         lastChangeCount = pasteboard.changeCount
         timer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
             Task { @MainActor in
                 self?.checkPasteboard()
+            }
+        }
+        // Periodic expired-item cleanup (every 10 minutes)
+        cleanupTimer = Timer.scheduledTimer(withTimeInterval: 600, repeats: true) { [weak self] _ in
+            Task { @MainActor in
+                self?.storageManager?.cleanupExpired()
             }
         }
     }
@@ -22,6 +32,8 @@ final class ClipboardMonitor: ObservableObject {
     func stop() {
         timer?.invalidate()
         timer = nil
+        cleanupTimer?.invalidate()
+        cleanupTimer = nil
     }
 
     private func checkPasteboard() {
@@ -54,6 +66,7 @@ final class ClipboardMonitor: ObservableObject {
            latest.type == .text,
            latest.textContent == trimmed {
             latest.timestamp = Date()
+            latest.sourceAppBundleId = NSWorkspace.shared.frontmostApplication?.bundleIdentifier
             try? context.save()
             return
         }
@@ -73,6 +86,21 @@ final class ClipboardMonitor: ObservableObject {
               let bitmap = NSBitmapImageRep(data: tiffData),
               let pngData = bitmap.representation(using: .png, properties: [:]) else { return }
 
+        let hash = SHA256.hash(data: pngData).compactMap { String(format: "%02x", $0) }.joined()
+
+        // Deduplicate: if same as latest image item, just bump timestamp
+        let fetchDescriptor = FetchDescriptor<ClipboardItem>(
+            sortBy: [SortDescriptor(\ClipboardItem.timestamp, order: .reverse)]
+        )
+        if let latest = try? context.fetch(fetchDescriptor).first,
+           latest.type == .image,
+           latest.imageHash == hash {
+            latest.timestamp = Date()
+            latest.sourceAppBundleId = NSWorkspace.shared.frontmostApplication?.bundleIdentifier
+            try? context.save()
+            return
+        }
+
         let fileName = "\(UUID().uuidString).png"
         let fileURL = ClipboardItem.imageDirectory.appendingPathComponent(fileName)
 
@@ -85,6 +113,7 @@ final class ClipboardMonitor: ObservableObject {
         let item = ClipboardItem(
             contentType: .image,
             imageFileName: fileName,
+            imageHash: hash,
             sourceAppBundleId: NSWorkspace.shared.frontmostApplication?.bundleIdentifier
         )
         context.insert(item)
@@ -116,22 +145,4 @@ final class ClipboardMonitor: ObservableObject {
         }
     }
 
-    func cleanupExpired(context: ModelContext) {
-        let retentionDays = UserDefaults.standard.integer(forKey: "retentionDays")
-        guard retentionDays > 0 else { return }
-
-        let cutoff = Calendar.current.date(byAdding: .day, value: -retentionDays, to: Date()) ?? Date()
-        let fetchDescriptor = FetchDescriptor<ClipboardItem>(
-            predicate: #Predicate { $0.isPinned == false && $0.timestamp < cutoff }
-        )
-        guard let expired = try? context.fetch(fetchDescriptor) else { return }
-
-        for item in expired {
-            if item.type == .image, let url = item.imageFileURL {
-                try? FileManager.default.removeItem(at: url)
-            }
-            context.delete(item)
-        }
-        try? context.save()
-    }
 }

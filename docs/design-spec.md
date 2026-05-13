@@ -8,7 +8,7 @@
 - **玻璃质感**：macOS vibrancy 毛玻璃效果
 
 ### 1.2 材质
-- 面板背景：`.ultraThinMaterial`（SwiftUI Material）
+- 面板背景：`.glassEffect()`（macOS 26+ 液态玻璃）
 - 卡片背景：`Color.primary.opacity(0.03)`，悬停时 `0.06`
 - 卡片边框：`Color.primary.opacity(0.08)`，0.5px
 - 圆角：面板 16px，卡片 10px，搜索栏 8px

@@ -7,13 +7,17 @@ final class StorageManager {
     let container: ModelContainer
     var context: ModelContext { container.mainContext }
 
-    init() {
-        let schema = Schema([ClipboardItem.self])
-        let config = ModelConfiguration("HistoryCopyStore", groupContainer: .none)
-        do {
-            container = try ModelContainer(for: schema, configurations: [config])
-        } catch {
-            fatalError("Failed to create ModelContainer: \(error)")
+    init(container: ModelContainer? = nil) {
+        if let container {
+            self.container = container
+        } else {
+            let schema = Schema([ClipboardItem.self])
+            let config = ModelConfiguration("HistoryCopyStore", groupContainer: .none)
+            do {
+                self.container = try ModelContainer(for: schema, configurations: [config])
+            } catch {
+                fatalError("Failed to create ModelContainer: \(error)")
+            }
         }
     }
 
@@ -37,10 +41,7 @@ final class StorageManager {
             )
         }
         let items = (try? context.fetch(descriptor)) ?? []
-        return items.sorted { lhs, rhs in
-            if lhs.isPinned != rhs.isPinned { return lhs.isPinned }
-            return lhs.timestamp > rhs.timestamp
-        }
+        return items.filter { !$0.isPinned }
     }
 
     func togglePin(_ item: ClipboardItem) {

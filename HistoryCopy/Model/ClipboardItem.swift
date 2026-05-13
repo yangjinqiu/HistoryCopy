@@ -13,6 +13,7 @@ final class ClipboardItem {
     var contentType: Int
     var textContent: String?
     var imageFileName: String?
+    var imageHash: String?
     var timestamp: Date
     var isPinned: Bool
     var sourceAppBundleId: String?
@@ -39,6 +40,7 @@ final class ClipboardItem {
         contentType: ContentType,
         textContent: String? = nil,
         imageFileName: String? = nil,
+        imageHash: String? = nil,
         timestamp: Date = Date(),
         isPinned: Bool = false,
         sourceAppBundleId: String? = nil
@@ -47,6 +49,7 @@ final class ClipboardItem {
         self.contentType = contentType.rawValue
         self.textContent = textContent
         self.imageFileName = imageFileName
+        self.imageHash = imageHash
         self.timestamp = timestamp
         self.isPinned = isPinned
         self.sourceAppBundleId = sourceAppBundleId

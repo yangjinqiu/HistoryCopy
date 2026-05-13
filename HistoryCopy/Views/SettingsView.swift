@@ -6,6 +6,7 @@ struct SettingsView: View {
     let storage: StorageManager
 
     @State private var retentionDays: Int
+    @State private var maxItemCount: Int
     @State private var launchAtLogin: Bool
     @State private var isRecordingHotkey = false
     @State private var hotkeyDisplay: String
@@ -19,6 +20,14 @@ struct SettingsView: View {
         (0, "永不")
     ]
 
+    private let maxCountOptions: [(Int, String)] = [
+        (100, "100"),
+        (500, "500"),
+        (1000, "1000"),
+        (2000, "2000"),
+        (5000, "5000")
+    ]
+
     init(storage: StorageManager) {
         self.storage = storage
 
@@ -27,6 +36,13 @@ struct SettingsView: View {
             _retentionDays = State(initialValue: days)
         } else {
             _retentionDays = State(initialValue: 3)
+        }
+
+        let count = UserDefaults.standard.integer(forKey: "maxItemCount")
+        if count > 0 && maxCountOptions.contains(where: { $0.0 == count }) {
+            _maxItemCount = State(initialValue: count)
+        } else {
+            _maxItemCount = State(initialValue: 1000)
         }
 
         _launchAtLogin = State(initialValue: SMAppService.mainApp.status == .enabled)
@@ -60,6 +76,24 @@ struct SettingsView: View {
                             NotificationCenter.default.post(
                                 name: NSNotification.Name("RefreshPanel"), object: nil
                             )
+                        }
+                    }
+
+                    Divider()
+
+                    // Max item count
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text("最大条数")
+                            .font(.system(size: 13, weight: .semibold))
+
+                        Picker("", selection: $maxItemCount) {
+                            ForEach(maxCountOptions, id: \.0) { option in
+                                Text(option.1).tag(option.0)
+                            }
+                        }
+                        .pickerStyle(.segmented)
+                        .onChange(of: maxItemCount) { _, newValue in
+                            UserDefaults.standard.set(newValue, forKey: "maxItemCount")
                         }
                     }
 

@@ -87,11 +87,11 @@ struct ClipboardCardView: View {
         .padding(.vertical, 10)
         .background(
             RoundedRectangle(cornerRadius: 10)
-                .fill(showActions ? Color.primary.opacity(0.06) : Color.primary.opacity(0.02))
+                .fill(showActions ? Color.primary.opacity(0.06) : Color.primary.opacity(0.03))
         )
         .overlay(
             RoundedRectangle(cornerRadius: 10)
-                .stroke(showActions ? Color.primary.opacity(0.1) : Color.clear, lineWidth: 0.5)
+                .stroke(Color.primary.opacity(0.08), lineWidth: 0.5)
         )
         .contentShape(RoundedRectangle(cornerRadius: 10))
         .help("点击复制到剪贴板")

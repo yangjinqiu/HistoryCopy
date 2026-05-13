@@ -14,7 +14,7 @@
 
 ## 2. 最低系统要求
 
-- macOS 14.0 (Sonoma)
+- macOS 26.0 (Tahoe)
 - Apple Silicon / Intel 通用
 
 ## 3. 项目架构

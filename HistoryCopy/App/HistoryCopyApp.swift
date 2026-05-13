@@ -47,16 +47,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     // MARK: - NSWindowDelegate
 
     func windowDidResignKey(_ notification: Notification) {
-        print("[HistoryCopy] windowDidResignKey called, window=\(notification.object as? NSWindow != nil ? "yes" : "no"), isPanel=\(notification.object as? NSWindow === panel)")
         guard let window = notification.object as? NSWindow, window === panel else { return }
-        if panel.attachedSheet != nil {
-            print("[HistoryCopy] windowDidResignKey skipped: sheet attached")
-            return
-        }
+        if panel.attachedSheet != nil { return }
+
         // ViewBridge warm-up: first show may immediately lose key, auto-retry once
         if let lastShow = lastShowTime, Date().timeIntervalSince(lastShow) < 0.6, showRetryCount == 0 {
             showRetryCount += 1
-            print("[HistoryCopy] windowDidResignKey -> auto-retry show (ViewBridge warm-up)")
             isPanelVisible = false
             dismissGeneration += 1
             panel.orderOut(nil)
@@ -64,7 +60,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             return
         }
         showRetryCount = 0
-        print("[HistoryCopy] windowDidResignKey -> calling dismissPanel")
         dismissPanel()
     }
 
@@ -184,7 +179,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     private func setupPanel() {
         panel = HistoryPanel(
-            contentRect: NSRect(x: 0, y: 0, width: 400, height: 580),
+            contentRect: NSRect(x: 0, y: 0, width: 440, height: 580),
             styleMask: [.borderless],
             backing: .buffered,
             defer: false
@@ -199,61 +194,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         panel.animationBehavior = .none
         panel.delegate = self
 
-        let panelSize = NSRect(x: 0, y: 0, width: 400, height: 580)
-
-        // Liquid Glass or fallback
-        let glassView: NSView
-        if let glassClass = NSClassFromString("NSGlassEffectView") as? NSView.Type {
-            let lg = glassClass.init(frame: panelSize)
-            if lg.responds(to: NSSelectorFromString("setStyle:")) {
-                typealias IntSetter = @convention(c) (NSObject, Selector, Int) -> Void
-                let imp = class_getMethodImplementation(type(of: lg), NSSelectorFromString("setStyle:"))
-                unsafeBitCast(imp, to: IntSetter.self)(lg as NSObject, NSSelectorFromString("setStyle:"), 0)
-            }
-            if lg.responds(to: NSSelectorFromString("setCornerRadius:")) {
-                typealias DblSetter = @convention(c) (NSObject, Selector, Double) -> Void
-                let imp = class_getMethodImplementation(type(of: lg), NSSelectorFromString("setCornerRadius:"))
-                unsafeBitCast(imp, to: DblSetter.self)(lg as NSObject, NSSelectorFromString("setCornerRadius:"), 20)
-            }
-            if lg.responds(to: NSSelectorFromString("setClipsToBounds:")) {
-                typealias BoolSetter = @convention(c) (NSObject, Selector, Bool) -> Void
-                let imp = class_getMethodImplementation(type(of: lg), NSSelectorFromString("setClipsToBounds:"))
-                unsafeBitCast(imp, to: BoolSetter.self)(lg as NSObject, NSSelectorFromString("setClipsToBounds:"), true)
-            }
-            // Pre-warm: force layout to initialize ViewBridge before panel is shown
-            lg.layoutSubtreeIfNeeded()
-            glassView = lg
-        } else {
-            let blur = NSVisualEffectView(frame: panelSize)
-            blur.material = .hudWindow
-            blur.blendingMode = .withinWindow
-            blur.state = .active
-            blur.wantsLayer = true
-            blur.layer?.cornerRadius = 20
-            blur.layer?.masksToBounds = true
-            glassView = blur
-        }
-
-        // SwiftUI content on top
         let hostingView = NSHostingView(
             rootView: HistoryPanelView(storage: storage, onDismiss: { [weak self] in
                 self?.dismissPanel()
             })
         )
+        hostingView.frame = NSRect(x: 0, y: 0, width: 440, height: 580)
         hostingView.wantsLayer = true
-        hostingView.layer?.backgroundColor = NSColor.clear.cgColor
-        hostingView.frame = panelSize
-        glassView.addSubview(hostingView)
+        hostingView.layer?.cornerRadius = 16
+        hostingView.layer?.shadowPath = CGPath(roundedRect: hostingView.bounds, cornerWidth: 16, cornerHeight: 16, transform: nil)
+        hostingView.layer?.shadowColor = NSColor.black.cgColor
+        hostingView.layer?.shadowOpacity = 0.15
+        hostingView.layer?.shadowRadius = 20
+        hostingView.layer?.shadowOffset = CGSize(width: 0, height: -8)
 
-        panel.contentView = glassView
+        panel.contentView = hostingView
     }
 
     private func showPanel() {
-        print("[HistoryCopy] showPanel called, isPanelVisible=\(isPanelVisible)")
-        guard !isPanelVisible else {
-            print("[HistoryCopy] showPanel aborted: already visible")
-            return
-        }
+        guard !isPanelVisible else { return }
 
         isPanelVisible = true
         dismissGeneration += 1
@@ -269,52 +228,41 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
         lastShowTime = Date()
         panel.alphaValue = 0
-        panel.contentView?.layer?.transform = CATransform3DMakeScale(0.94, 0.94, 1)
         NSApp.activate(ignoringOtherApps: true)
         panel.makeKeyAndOrderFront(nil)
-        print("[HistoryCopy] showPanel makeKeyAndOrderFront done")
 
         let p = panel!
         NSAnimationContext.runAnimationGroup { ctx in
             ctx.duration = 0.4
             ctx.timingFunction = CAMediaTimingFunction(controlPoints: 0.175, 0.885, 0.32, 1.275)
             p.animator().alphaValue = 1
-            p.contentView?.layer?.transform = CATransform3DIdentity
         }
     }
 
     private func dismissPanel() {
-        print("[HistoryCopy] dismissPanel called, isPanelVisible=\(isPanelVisible)")
-        guard isPanelVisible else {
-            print("[HistoryCopy] dismissPanel aborted: not visible")
-            return
-        }
+        guard isPanelVisible else { return }
 
         isPanelVisible = false
         dismissGeneration += 1
         let capturedGen = dismissGeneration
-        print("[HistoryCopy] dismissPanel set isPanelVisible=false, gen=\(capturedGen)")
 
         let p = panel!
         NSAnimationContext.runAnimationGroup { ctx in
             ctx.duration = 0.15
             ctx.timingFunction = CAMediaTimingFunction(name: .easeIn)
             p.animator().alphaValue = 0
-            p.contentView?.layer?.transform = CATransform3DMakeScale(0.97, 0.97, 1)
         } completionHandler: { [weak self] in
             guard let self else { return }
-            if self.dismissGeneration == capturedGen {
-                p.orderOut(nil)
-                p.alphaValue = 1
-                print("[HistoryCopy] dismissPanel completion: panel ordered out, gen=\(capturedGen)")
-            } else {
-                print("[HistoryCopy] dismissPanel completion skipped: gen mismatch (captured=\(capturedGen), current=\(self.dismissGeneration))")
+            MainActor.assumeIsolated {
+                if self.dismissGeneration == capturedGen {
+                    p.orderOut(nil)
+                    p.alphaValue = 1
+                }
             }
         }
     }
 
     private func togglePanel() {
-        print("[HistoryCopy] togglePanel called, isPanelVisible=\(isPanelVisible)")
         if isPanelVisible {
             dismissPanel()
         } else {
@@ -327,17 +275,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private func setupHotkey() {
         hotkeyManager.loadSavedConfig()
         hotkeyManager.onHotkeyPressed = { [weak self] in
-            print("[HistoryCopy] onHotkeyPressed fired, self=\(self != nil ? "alive" : "nil")")
-            DispatchQueue.main.async {
-                guard let self else {
-                    print("[HistoryCopy] ERROR: self is nil in DispatchQueue.main.async")
-                    return
-                }
-                print("[HistoryCopy] DispatchQueue.main.async executing, isPanelVisible=\(self.isPanelVisible)")
-                MainActor.assumeIsolated {
-                    self.togglePanel()
-                }
-            }
+            guard let self else { return }
+            self.togglePanel()
         }
         hotkeyManager.register()
     }
@@ -346,10 +285,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     private func setupClipboardMonitor() {
         monitor = ClipboardMonitor()
-        monitor?.start(context: storage.context)
+        monitor?.start(context: storage.context, storageManager: storage)
 
         // Clean expired on launch
-        monitor?.cleanupExpired(context: storage.context)
+        storage.cleanupExpired()
     }
 
     // MARK: - Settings
@@ -365,4 +304,3 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         NSApp.terminate(nil)
     }
 }
-

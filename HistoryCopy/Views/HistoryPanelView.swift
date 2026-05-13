@@ -118,13 +118,14 @@ struct HistoryPanelView: View {
             .padding(.horizontal, 14)
             .padding(.vertical, 8)
         }
-        .frame(width: 400)
+        .frame(width: 440)
+        .frame(maxHeight: .infinity)
+        .glassEffect(in: .rect(cornerRadius: 16))
     }
 
     private func loadItems() {
         pinnedItems = storage.fetchPinnedItems()
         regularItems = storage.fetchItems(searchText: searchText)
-            .filter { !$0.isPinned }
     }
 
     private func togglePin(_ item: ClipboardItem) {
